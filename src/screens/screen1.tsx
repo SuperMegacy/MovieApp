@@ -9,7 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from "react-native";
-import { useAppDispatch, useAppSelector } from "../store/hooks";
+import Animated, { FadeInRight, FadeOutLeft } from "react-native-reanimated";
+import { useAppDispatch } from "../store/hooks";
 import { setCredentials } from "../store/authSlice";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/RootNavigator";
@@ -23,8 +24,7 @@ const passwordRegex =
 
 const Screen1: React.FC<Props> = ({ navigation }) => {
   const dispatch = useAppDispatch();
-  const lang = useAppSelector((state) => state.language.language);
-
+  const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [touched, setTouched] = useState({ email: false, password: false });
@@ -45,8 +45,32 @@ const Screen1: React.FC<Props> = ({ navigation }) => {
       behavior={Platform.select({ ios: "padding", android: undefined })}
       style={styles.container}
     >
-      <View style={styles.card}>
-        <Text style={styles.label}>{t(lang, "email")}</Text>
+      <View style={styles.toggleWrap}>
+        <TouchableOpacity
+          style={[styles.toggleBtn, mode === "login" && styles.activeTab]}
+          onPress={() => setMode("login")}
+        >
+          <Text style={[styles.toggleText, mode === "login" && styles.activeText]}>
+            {t("login")}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.toggleBtn, mode === "register" && styles.activeTab]}
+          onPress={() => setMode("register")}
+        >
+          <Text style={[styles.toggleText, mode === "register" && styles.activeText]}>
+            {t("register")}
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <Animated.View
+        style={styles.card}
+        entering={FadeInRight}
+        exiting={FadeOutLeft}
+        key={mode}
+      >
+        <Text style={styles.label}>{t("email")}</Text>
         <TextInput
           value={email}
           onChangeText={(v) => setEmail(v)}
@@ -57,10 +81,10 @@ const Screen1: React.FC<Props> = ({ navigation }) => {
           style={styles.input}
         />
         {!emailValid && touched.email && (
-          <Text style={styles.error}>{t(lang, "invalidEmail")}</Text>
+          <Text style={styles.error}>{t("invalidEmail")}</Text>
         )}
 
-        <Text style={[styles.label, { marginTop: 16 }]}>{t(lang, "password")}</Text>
+        <Text style={[styles.label, { marginTop: 16 }]}>{t("password")}</Text>
         <TextInput
           value={password}
           onChangeText={(v) => setPassword(v)}
@@ -70,7 +94,7 @@ const Screen1: React.FC<Props> = ({ navigation }) => {
           style={styles.input}
         />
         {!passwordValid && touched.password && (
-          <Text style={styles.error}>{t(lang, "invalidPassword")}</Text>
+          <Text style={styles.error}>{t("invalidPassword")}</Text>
         )}
 
         <TouchableOpacity
@@ -79,9 +103,11 @@ const Screen1: React.FC<Props> = ({ navigation }) => {
           style={[styles.button, !canSubmit && styles.buttonDisabled]}
           disabled={!canSubmit}
         >
-          <Text style={styles.buttonText}>{t(lang, "submit")}</Text>
+          <Text style={styles.buttonText}>
+            {mode === "login" ? t("login") : t("register")}
+          </Text>
         </TouchableOpacity>
-      </View>
+      </Animated.View>
     </KeyboardAvoidingView>
   );
 };
@@ -90,7 +116,29 @@ export default Screen1;
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: "center", padding: 16, backgroundColor: "#f6f6f6" },
-  card: { backgroundColor: "white", padding: 20, borderRadius: 12, elevation: 2 },
+
+  toggleWrap: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderBottomWidth: 2,
+    borderBottomColor: "transparent",
+  },
+  toggleText: { fontSize: 16, color: "#777", fontWeight: "600" },
+  activeTab: { borderBottomColor: "#0a84ff" },
+  activeText: { color: "#0a84ff" },
+
+  card: {
+    backgroundColor: "white",
+    padding: 20,
+    borderRadius: 12,
+    elevation: 2,
+  },
   label: { fontSize: 14, color: "#333", marginBottom: 8 },
   input: {
     borderWidth: 1,
@@ -100,6 +148,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   error: { color: "#c00", marginTop: 6, fontSize: 12 },
+
   button: {
     marginTop: 20,
     backgroundColor: "#0a84ff",

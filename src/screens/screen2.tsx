@@ -30,7 +30,7 @@ import { t } from "../i18n/translation";
 const { width } = Dimensions.get("window");
 const SIDE_PADDING = 12;
 const CARD_SPACING = 12;
-const CARD_WIDTH = (width - SIDE_PADDING * 2 - CARD_SPACING) / 2; // two columns
+const CARD_WIDTH = (width - SIDE_PADDING * 10) / 4; // two columns
 
 const TOP_CAROUSEL_HEIGHT = 180;
 
@@ -212,7 +212,7 @@ const Screen2: React.FC = () => {
     <View style={styles.container}>
       {/* Top nav + search */}
       <View style={styles.topBar}>
-        <Text style={styles.appTitle}>{t(lang, "popularMovies")}</Text>
+        <Text style={styles.appTitle}>{t("popularMovies")}</Text>
         <View style={styles.topActions}>
           <View style={styles.searchWrap}>
             <TextInput
@@ -229,7 +229,7 @@ const Screen2: React.FC = () => {
           </View>
 
           <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-            <Text style={styles.logoutText}>{t(lang, "logout")}</Text>
+            <Text style={styles.logoutText}>{t("Logout")}</Text>
           </TouchableOpacity>
         </View>
       </View>

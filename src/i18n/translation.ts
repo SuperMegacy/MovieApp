@@ -5,6 +5,8 @@ const translations: Record<Language, Record<string, string>> = {
   en: {
     email: "Email",
     password: "Password",
+    login: "Login",
+    register: "Register",
     submit: "Submit",
     invalidEmail: "Invalid email address",
     invalidPassword:
@@ -17,6 +19,8 @@ const translations: Record<Language, Record<string, string>> = {
   ar: {
     email: "البريد الإلكتروني",
     password: "كلمة المرور",
+    login: "تسجيل الدخول",
+    register: "إنشاء حساب",
     submit: "إرسال",
     invalidEmail: "بريد إلكتروني غير صالح",
     invalidPassword:
@@ -28,8 +32,17 @@ const translations: Record<Language, Record<string, string>> = {
   },
 };
 
-export function t(lang: Language, key: string): string {
-  return translations[lang]?.[key] || key;
+// store current language (default: English)
+let currentLanguage: Language = "en";
+
+// Change language
+export function setLanguage(lang: Language) {
+  currentLanguage = lang;
 }
 
-export default translations;
+// Translate
+export function t(key: string): string {
+  return translations[currentLanguage]?.[key] || key;
+}
+
+export { currentLanguage };
