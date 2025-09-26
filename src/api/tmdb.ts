@@ -65,7 +65,7 @@ export interface GenreList {
   genres: Genre[];
 }
 
-export async function getGenreList(): Promise<GenreList> {
+export async function getGenres(): Promise<GenreList> {
   const url = `${BASE_URL}/genre/movie/list?api_key=${TMDB_API_KEY}&language=en-US`;
   const res = await fetch(url);
   if (!res.ok) {
