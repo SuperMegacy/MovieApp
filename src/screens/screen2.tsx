@@ -1,3 +1,4 @@
+
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
@@ -13,8 +14,9 @@ import {
 } from "react-native";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { clearCredentials } from "../store/authSlice";
+import { setLanguage } from "../store/languageSlice";
 import { getPopularMovies, getGenres, discoverByGenre, searchMovies, Movie, Genre } from "../api/tmdb";
-import { t } from "../i18n/translation";
+import { useTranslation } from "../store/hooks";
 
 import MovieCard from "../components/MovieCard";
 import PaginationButton from "../components/PaginationButton";
@@ -29,7 +31,7 @@ const CARD_SPACING = 8;
 
 const Screen2: React.FC = () => {
   const dispatch = useAppDispatch();
-  const lang = useAppSelector((s) => s.language.language);
+  const { t, lang } = useTranslation();
 
   const [movies, setMovies] = useState<Movie[]>([]);
   const [carouselItems, setCarouselItems] = useState<Movie[]>([]);
@@ -52,6 +54,7 @@ const Screen2: React.FC = () => {
   const mainScrollRef = useRef<ScrollView>(null);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Show/hide pagination when near bottom
   const handleScroll = (event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     const contentHeight = event.nativeEvent.contentSize.height;
@@ -76,6 +79,7 @@ const Screen2: React.FC = () => {
     };
   }, []);
 
+  // Fetch genres once
   const loadGenres = useCallback(async () => {
     try {
       const g = await getGenres();
@@ -85,6 +89,7 @@ const Screen2: React.FC = () => {
     }
   }, []);
 
+  // Central load function
   const load = useCallback(
     async (p = 1) => {
       try {
@@ -158,6 +163,12 @@ const Screen2: React.FC = () => {
     setModalVisible(true);
   };
 
+  // language toggle that updates redux language
+  const toggleLang = () => {
+    const next = lang === "en" ? "ar" : "en";
+    dispatch(setLanguage(next));
+  };
+
   const logout = () => {
     dispatch(clearCredentials());
   };
@@ -173,6 +184,9 @@ const Screen2: React.FC = () => {
     return pages;
   }, [page, totalPages]);
 
+  // safe placeholder for search (fall back to english literal)
+  const searchPlaceholder = t("searchPlaceholder") === "searchPlaceholder" ? "Search movies..." : t("searchPlaceholder");
+
   return (
     <View style={styles.container}>
       {/* Top Bar */}
@@ -183,9 +197,9 @@ const Screen2: React.FC = () => {
             <TextInput
               value={searchQuery}
               onChangeText={setSearchQuery}
-              placeholder="Search movies..."
+              placeholder={searchPlaceholder}
               onSubmitEditing={onSearch}
-              style={styles.searchInput}
+              style={[styles.searchInput, lang === "ar" ? { textAlign: "right" } : undefined]}
               returnKeyType="search"
               placeholderTextColor="#999"
             />
@@ -194,8 +208,12 @@ const Screen2: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={logout} style={styles.logoutBtn}>
-            <Text style={styles.logoutText}>{t("Logout")}</Text>
+          <TouchableOpacity onPress={toggleLang} style={[styles.logoutBtn, { marginLeft: 8 }]}>
+            <Text style={styles.logoutText}>{lang === "en" ? t("switchToArabic") : t("switchToEnglish")}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={logout} style={[styles.logoutBtn, { marginLeft: 8 }]}>
+            <Text style={styles.logoutText}>{t("logout")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -243,7 +261,7 @@ const Screen2: React.FC = () => {
             </View>
           ) : (
             <View style={styles.emptyState}>
-              <Text style={styles.emptyStateText}>No movies found</Text>
+              <Text style={styles.emptyStateText}>{t("noMoviesFound") === "noMoviesFound" ? "No movies found" : t("noMoviesFound")}</Text>
             </View>
           )}
         </View>

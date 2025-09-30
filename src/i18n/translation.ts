@@ -1,4 +1,3 @@
-// src/i18n/translation.ts
 export type Language = "en" | "ar";
 
 const translations: Record<Language, Record<string, string>> = {
@@ -24,7 +23,7 @@ const translations: Record<Language, Record<string, string>> = {
     submit: "إرسال",
     invalidEmail: "بريد إلكتروني غير صالح",
     invalidPassword:
-      "يجب أن تكون كلمة المرور بين 8-15 حرفًا وتحتوي على حرف كبير واحد ورقم وحرف خاص",
+      "يجب أن تكون كلمة المرور بين 8-15 حرفًا وتحتوي على حرف كبير واحد ورقم وحرف خاص واحد",
     popularMovies: "الأفلام الشعبية",
     logout: "تسجيل الخروج",
     switchToArabic: "العربية",
@@ -32,17 +31,9 @@ const translations: Record<Language, Record<string, string>> = {
   },
 };
 
-// store current language (default: English)
-let currentLanguage: Language = "en";
-
-// Change language
-export function setLanguage(lang: Language) {
-  currentLanguage = lang;
+// Translate based on provided language
+export function t(lang: Language, key: string): string {
+  return translations[lang]?.[key] || key;
 }
 
-// Translate
-export function t(key: string): string {
-  return translations[currentLanguage]?.[key] || key;
-}
-
-export { currentLanguage };
+export default translations;

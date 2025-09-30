@@ -1,4 +1,3 @@
-// src/store/languageSlice.ts
 import { createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 export type Language = "en" | "ar";
