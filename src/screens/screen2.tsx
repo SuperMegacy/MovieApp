@@ -13,6 +13,7 @@ import {
   Modal,
   ScrollView,
   Platform,
+  Animated,
 } from "react-native";
 import {
   getPopularMovies,
@@ -27,12 +28,12 @@ import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { clearCredentials } from "../store/authSlice";
 import { t } from "../i18n/translation";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 const SIDE_PADDING = 12;
-const CARD_SPACING = 12;
-const CARD_WIDTH = (width - SIDE_PADDING * 10) / 4; // two columns
+const CARD_SPACING = 8;
+const CARD_WIDTH = (width - SIDE_PADDING * 2 - CARD_SPACING * 5) / 6; // 6 columns
 
-const TOP_CAROUSEL_HEIGHT = 180;
+const TOP_CAROUSEL_HEIGHT = 160;
 
 const PaginationButton: React.FC<{ active?: boolean; onPress: () => void; label: string }> = ({
   active,
@@ -51,18 +52,21 @@ const PaginationButton: React.FC<{ active?: boolean; onPress: () => void; label:
 const MovieCard: React.FC<{ item: Movie; onPress: (m: Movie) => void }> = ({ item, onPress }) => {
   const posterUrl = item.poster_path ? `${IMAGE_BASE}${item.poster_path}` : null;
   return (
-    <TouchableOpacity onPress={() => onPress(item)} activeOpacity={0.8} style={styles.movieCard}>
+    <TouchableOpacity onPress={() => onPress(item)} activeOpacity={0.9} style={styles.movieCard}>
       {posterUrl ? (
         <Image source={{ uri: posterUrl }} style={styles.poster} resizeMode="cover" />
       ) : (
         <View style={[styles.poster, styles.noImage]}>
-          <Text>No Image</Text>
+          <Text style={styles.noImageText}>No Image</Text>
         </View>
       )}
       <View style={styles.cardTitleWrap}>
         <Text style={styles.cardTitle} numberOfLines={2}>
           {item.title}
         </Text>
+        {item.vote_average ? (
+          <Text style={styles.ratingText}>⭐ {item.vote_average.toFixed(1)}</Text>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -79,6 +83,10 @@ const Screen2: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Scroll states
+  const [showPagination, setShowPagination] = useState(false);
+  const scrollY = useRef(new Animated.Value(0)).current;
+
   // Pagination & filters
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -90,9 +98,44 @@ const Screen2: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [activeMovie, setActiveMovie] = useState<Movie | null>(null);
 
-  // Carousel auto-play ref
+  // Refs
   const carouselIndexRef = useRef(0);
   const carouselFlatRef = useRef<FlatList<Movie> | null>(null);
+  const mainScrollRef = useRef<ScrollView>(null);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Handle scroll events
+  const handleScroll = (event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    const contentHeight = event.nativeEvent.contentSize.height;
+    const layoutHeight = event.nativeEvent.layoutMeasurement.height;
+    
+    // Show pagination when near bottom
+    if (offsetY + layoutHeight >= contentHeight - 100) {
+      setShowPagination(true);
+    } else {
+      setShowPagination(false);
+    }
+
+    // Clear existing timeout
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+
+    // Set timeout to hide pagination when scrolling stops
+    scrollTimeoutRef.current = setTimeout(() => {
+      setShowPagination(false);
+    }, 2000);
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Fetch genres once
   const loadGenres = useCallback(async () => {
@@ -104,7 +147,7 @@ const Screen2: React.FC = () => {
     }
   }, []);
 
-  // Central load function (respects search and genre)
+  // Central load function
   const load = useCallback(
     async (p = 1) => {
       try {
@@ -133,31 +176,35 @@ const Screen2: React.FC = () => {
     [searchMode, searchQuery, selectedGenre]
   );
 
-  // Load top carousel (first page popular)
+  // Load top carousel
   const loadCarousel = useCallback(async () => {
     try {
       const res = await getPopularMovies(1);
-      // show top 6 items
-      setCarouselItems(res.results.slice(0, 6));
+      setCarouselItems(res.results.slice(0, 8));
     } catch (err) {
       console.error("Failed loading carousel items", err);
     }
   }, []);
 
   useEffect(() => {
-    // initial loads
     loadGenres();
     load(1);
     loadCarousel();
   }, [loadGenres, load, loadCarousel]);
 
-  // Autoplay carousel every 4s
+  // Autoplay carousel
   useEffect(() => {
+    if (carouselItems.length === 0) return;
+    
     const id = setInterval(() => {
-      if (!carouselFlatRef.current || carouselItems.length === 0) return;
+      if (!carouselFlatRef.current) return;
       carouselIndexRef.current = (carouselIndexRef.current + 1) % carouselItems.length;
-      carouselFlatRef.current.scrollToIndex({ index: carouselIndexRef.current, animated: true });
+      carouselFlatRef.current.scrollToIndex({ 
+        index: carouselIndexRef.current, 
+        animated: true 
+      });
     }, 4000);
+    
     return () => clearInterval(id);
   }, [carouselItems.length]);
 
@@ -172,6 +219,8 @@ const Screen2: React.FC = () => {
   const goToPage = (p: number) => {
     if (p < 1 || p > totalPages) return;
     load(p);
+    // Scroll to top when changing pages
+    mainScrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
   const onSelectGenre = (id: number | null) => {
@@ -196,7 +245,7 @@ const Screen2: React.FC = () => {
     dispatch(clearCredentials());
   };
 
-  // Small helper to render page numbers (show window around current)
+  // Page numbers helper
   const pageNumbers = useMemo(() => {
     const current = page;
     const max = totalPages;
@@ -210,9 +259,9 @@ const Screen2: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      {/* Top nav + search */}
+      {/* Fixed Top Bar */}
       <View style={styles.topBar}>
-        <Text style={styles.appTitle}>{t("popularMovies")}</Text>
+        <Text style={styles.appTitle}>🎬 {t("popularMovies")}</Text>
         <View style={styles.topActions}>
           <View style={styles.searchWrap}>
             <TextInput
@@ -222,9 +271,10 @@ const Screen2: React.FC = () => {
               onSubmitEditing={onSearch}
               style={styles.searchInput}
               returnKeyType="search"
+              placeholderTextColor="#999"
             />
             <TouchableOpacity onPress={onSearch} style={styles.searchBtn}>
-              <Text style={styles.searchBtnText}>Search</Text>
+              <Text style={styles.searchBtnText}>🔍</Text>
             </TouchableOpacity>
           </View>
 
@@ -234,70 +284,125 @@ const Screen2: React.FC = () => {
         </View>
       </View>
 
-      {/* Carousel */}
-      <View style={styles.carouselWrap}>
-        <FlatList
-          data={carouselItems}
-          horizontal
-          ref={(r) => {
-               carouselFlatRef.current = r;
-              }}
-          keyExtractor={(it) => it.id.toString()}
-          renderItem={({ item }) => (
+      {/* Main Scrollable Content */}
+      <ScrollView 
+        ref={mainScrollRef}
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={["#0a84ff"]}
+            tintColor="#0a84ff"
+          />
+        }
+      >
+        {/* Carousel */}
+        <View style={styles.carouselWrap}>
+          <FlatList
+            data={carouselItems}
+            horizontal
+            ref={carouselFlatRef}
+            keyExtractor={(it) => it.id.toString()}
+            renderItem={({ item }) => (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() => openDetails(item)}
+                style={styles.carouselItem}
+              >
+                {item.poster_path ? (
+                  <Image
+                    source={{ uri: `${IMAGE_BASE}${item.poster_path}` }}
+                    style={styles.carouselImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.carouselImage, styles.noImage]}>
+                    <Text style={styles.noImageText}>No Image</Text>
+                  </View>
+                )}
+                <View style={styles.carouselTextWrap}>
+                  <Text style={styles.carouselTitle} numberOfLines={2}>
+                    {item.title}
+                  </Text>
+                  {item.vote_average ? (
+                    <Text style={styles.carouselRating}>⭐ {item.vote_average.toFixed(1)}</Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            )}
+            showsHorizontalScrollIndicator={false}
+            pagingEnabled={false}
+          />
+        </View>
+
+        {/* Genres Filter */}
+        <View style={styles.genresContainer}>
+          <Text style={styles.genresTitle}>Genres</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.genresScroll}>
             <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() => openDetails(item)}
-              style={styles.carouselItem}
+              style={[styles.genreChip, selectedGenre === null && styles.genreChipSelected]}
+              onPress={() => onSelectGenre(null)}
             >
-              {item.poster_path ? (
-                <Image
-                  source={{ uri: `${IMAGE_BASE}${item.poster_path}` }}
-                  style={styles.carouselImage}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={[styles.carouselImage, styles.noImage]}>
-                  <Text>No Image</Text>
-                </View>
-              )}
-              <View style={styles.carouselTextWrap}>
-                <Text style={styles.carouselTitle} numberOfLines={2}>
-                  {item.title}
-                </Text>
-              </View>
+              <Text style={[styles.genreChipText, selectedGenre === null && styles.genreChipTextSelected]}>
+                All
+              </Text>
             </TouchableOpacity>
-          )}
-          showsHorizontalScrollIndicator={false}
-          pagingEnabled={false}
-        />
-      </View>
+            {genres.map((g) => (
+              <TouchableOpacity
+                key={g.id}
+                style={[styles.genreChip, selectedGenre === g.id && styles.genreChipSelected]}
+                onPress={() => onSelectGenre(g.id)}
+              >
+                <Text style={[styles.genreChipText, selectedGenre === g.id && styles.genreChipTextSelected]}>
+                  {g.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
 
-      {/* Content area: movies + right-side genres (responsive) */}
-      <View style={styles.contentRow}>
-        {/* Movies grid */}
-        <View style={styles.moviesColumn}>
+        {/* Movies Grid - 6 Columns */}
+        <View style={styles.moviesGrid}>
           {loading ? (
-            <ActivityIndicator style={{ marginTop: 40 }} size="large" />
-          ) : (
-            <FlatList
-              data={movies}
-              keyExtractor={(item) => item.id.toString()}
-              renderItem={({ item }) => <MovieCard item={item} onPress={openDetails} />}
-              numColumns={2}
-              columnWrapperStyle={styles.columnWrapper}
-              contentContainerStyle={{ padding: SIDE_PADDING }}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              ListEmptyComponent={
-                <View style={{ padding: 20 }}>
-                  <Text>No movies found.</Text>
+            <ActivityIndicator style={styles.loader} size="large" color="#0a84ff" />
+          ) : movies.length > 0 ? (
+            <View style={styles.gridContainer}>
+              {movies.map((movie, index) => (
+                <View 
+                  key={movie.id} 
+                  style={[
+                    styles.movieCardWrapper,
+                    index % 6 === 5 ? styles.lastInRow : null
+                  ]}
+                >
+                  <MovieCard item={movie} onPress={openDetails} />
                 </View>
-              }
-            />
+              ))}
+            </View>
+          ) : (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No movies found</Text>
+            </View>
           )}
+        </View>
 
-          {/* Pagination footer */}
+        {/* Spacer for pagination */}
+        <View style={styles.paginationSpacer} />
+      </ScrollView>
+
+      {/* Pagination - Only shows when scrolled to bottom */}
+      {showPagination && (
+        <View style={styles.paginationContainer}>
           <View style={styles.pagination}>
-            <PaginationButton onPress={() => goToPage(page - 1)} label="Prev" />
+            <PaginationButton 
+              onPress={() => goToPage(page - 1)} 
+              label="‹ Prev" 
+            />
             {pageNumbers.map((p) => (
               <PaginationButton
                 key={p}
@@ -306,39 +411,15 @@ const Screen2: React.FC = () => {
                 active={p === page}
               />
             ))}
-            <PaginationButton onPress={() => goToPage(page + 1)} label="Next" />
+            <PaginationButton 
+              onPress={() => goToPage(page + 1)} 
+              label="Next ›" 
+            />
           </View>
         </View>
+      )}
 
-        {/* Right-hand side: genres (on wide screens) */}
-        <View style={styles.sideColumn}>
-          <Text style={styles.sideTitle}>Genres</Text>
-          <ScrollView style={{ marginTop: 8 }}>
-            <TouchableOpacity
-              style={[styles.genreItem, selectedGenre === null && styles.genreSelected]}
-              onPress={() => onSelectGenre(null)}
-            >
-              <Text style={[styles.genreText, selectedGenre === null && styles.genreTextSelected]}>
-                All
-              </Text>
-            </TouchableOpacity>
-
-            {genres.map((g) => (
-              <TouchableOpacity
-                key={g.id}
-                style={[styles.genreItem, selectedGenre === g.id && styles.genreSelected]}
-                onPress={() => onSelectGenre(g.id)}
-              >
-                <Text style={[styles.genreText, selectedGenre === g.id && styles.genreTextSelected]}>
-                  {g.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-      </View>
-
-      {/* Modal for movie details */}
+      {/* Movie details modal */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
@@ -349,16 +430,22 @@ const Screen2: React.FC = () => {
                   style={styles.modalPoster}
                   resizeMode="cover"
                 />
-              ) : null}
-              <View style={{ padding: 12 }}>
+              ) : (
+                <View style={[styles.modalPoster, styles.noImage]}>
+                  <Text style={styles.noImageText}>No Image</Text>
+                </View>
+              )}
+              <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>{activeMovie?.title}</Text>
-                {activeMovie?.release_date ? (
-                  <Text style={styles.modalSub}>{activeMovie.release_date}</Text>
-                ) : null}
-                {activeMovie?.vote_average ? (
-                  <Text style={styles.modalSub}>Rating: {activeMovie.vote_average}</Text>
-                ) : null}
-                <Text style={{ marginTop: 8 }}>{activeMovie?.overview}</Text>
+                <View style={styles.modalDetails}>
+                  {activeMovie?.release_date ? (
+                    <Text style={styles.modalSub}>📅 {activeMovie.release_date}</Text>
+                  ) : null}
+                  {activeMovie?.vote_average ? (
+                    <Text style={styles.modalSub}>⭐ {activeMovie.vote_average}/10</Text>
+                  ) : null}
+                </View>
+                <Text style={styles.modalOverview}>{activeMovie?.overview}</Text>
               </View>
             </ScrollView>
 
@@ -370,7 +457,7 @@ const Screen2: React.FC = () => {
                 }}
                 style={styles.modalCloseBtn}
               >
-                <Text style={{ color: "#fff", fontWeight: "600" }}>Close</Text>
+                <Text style={styles.modalCloseText}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -383,170 +470,333 @@ const Screen2: React.FC = () => {
 export default Screen2;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#f7f7f8" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#0f0f1a" 
+  },
+
+  scrollView: {
+    flex: 1,
+  },
+
+  scrollContent: {
+    paddingBottom: 100, // Space for pagination
+  },
 
   topBar: {
     paddingHorizontal: SIDE_PADDING,
     paddingTop: Platform.OS === "ios" ? 56 : 28,
     paddingBottom: 12,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1a2e",
     borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-    flexDirection: "row",
+    borderBottomColor: "#2a2a4a",
+    zIndex: 1000,
+  },
+  appTitle: { 
+    fontSize: 22, 
+    fontWeight: "800", 
+    color: "#fff",
+    marginBottom: 8,
+  },
+  topActions: { 
+    flexDirection: "row", 
     alignItems: "center",
     justifyContent: "space-between",
   },
-  appTitle: { fontSize: 20, fontWeight: "800" },
-  topActions: { flexDirection: "row", alignItems: "center" },
 
-  searchWrap: { flexDirection: "row", alignItems: "center", marginRight: 12 },
+  searchWrap: { 
+    flexDirection: "row", 
+    alignItems: "center",
+    flex: 1,
+    marginRight: 12,
+  },
   searchInput: {
-    width: 220,
+    flex: 1,
     borderWidth: 1,
-    borderColor: "#e2e2e2",
+    borderColor: "#2a2a4a",
     borderRadius: 8,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: "#fff",
+    backgroundColor: "#0f0f1a",
     marginRight: 8,
+    color: "#fff",
+    fontSize: 14,
   },
   searchBtn: {
     backgroundColor: "#0a84ff",
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
   },
-  searchBtnText: { color: "#fff", fontWeight: "600" },
+  searchBtnText: { 
+    color: "#fff", 
+    fontWeight: "600",
+    fontSize: 16,
+  },
 
   logoutBtn: {
-    backgroundColor: "#111827",
-    paddingHorizontal: 12,
+    backgroundColor: "#ff4757",
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
   },
-  logoutText: { color: "#fff", fontWeight: "600" },
+  logoutText: { 
+    color: "#fff", 
+    fontWeight: "600" 
+  },
 
   carouselWrap: {
     height: TOP_CAROUSEL_HEIGHT,
-    backgroundColor: "#fff",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    backgroundColor: "#1a1a2e",
+    paddingVertical: 12,
   },
   carouselItem: {
-    width: Math.round(width * 0.6),
-    marginHorizontal: 10,
-    borderRadius: 10,
+    width: width * 0.4,
+    marginHorizontal: 6,
+    borderRadius: 12,
     overflow: "hidden",
+    backgroundColor: "#0f0f1a",
   },
   carouselImage: {
     width: "100%",
-    height: TOP_CAROUSEL_HEIGHT - 40,
-    backgroundColor: "#ddd",
+    height: TOP_CAROUSEL_HEIGHT - 50,
+    backgroundColor: "#2a2a4a",
   },
   carouselTextWrap: {
     padding: 8,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#1a1a2e",
   },
-  carouselTitle: { fontSize: 16, fontWeight: "700" },
-
-  contentRow: {
-    flex: 1,
-    flexDirection: "row",
+  carouselTitle: { 
+    fontSize: 14, 
+    fontWeight: "700", 
+    color: "#fff" 
+  },
+  carouselRating: {
+    fontSize: 12,
+    color: "#ffd700",
+    marginTop: 2,
   },
 
-  moviesColumn: {
-    flex: 1,
+  genresContainer: {
+    padding: SIDE_PADDING,
+    backgroundColor: "#1a1a2e",
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a4a",
+  },
+  genresTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 8,
+  },
+  genresScroll: {
+    flexGrow: 0,
+  },
+  genreChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#2a2a4a",
+    backgroundColor: "#0f0f1a",
+    marginRight: 8,
+  },
+  genreChipSelected: {
+    backgroundColor: "#0a84ff",
+    borderColor: "#0a84ff",
+  },
+  genreChipText: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  genreChipTextSelected: {
+    color: "#fff",
+    fontWeight: "700",
   },
 
-  sideColumn: {
-    width: 160,
-    borderLeftWidth: 1,
-    borderLeftColor: "#eee",
-    backgroundColor: "#fff",
-    padding: 10,
+  moviesGrid: {
+    padding: SIDE_PADDING,
+    minHeight: 400,
   },
-  sideTitle: { fontSize: 16, fontWeight: "700" },
 
-  columnWrapper: {
-    justifyContent: "space-between",
-    paddingHorizontal: SIDE_PADDING,
+  loader: {
+    marginTop: 40,
+  },
+
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-start',
+  },
+
+  movieCardWrapper: {
+    width: CARD_WIDTH,
+    marginRight: CARD_SPACING,
+    marginBottom: CARD_SPACING,
+  },
+  
+  lastInRow: {
+    marginRight: 0,
   },
 
   movieCard: {
-    width: CARD_WIDTH,
-    marginBottom: 14,
-    backgroundColor: "#fff",
-    borderRadius: 10,
+    backgroundColor: "#1a1a2e",
+    borderRadius: 8,
     overflow: "hidden",
     elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
-  poster: { width: "100%", height: CARD_WIDTH * 1.4, backgroundColor: "#ddd" },
-  noImage: { alignItems: "center", justifyContent: "center" },
-  cardTitleWrap: { padding: 8 },
-  cardTitle: { fontSize: 14, fontWeight: "700" },
+  poster: { 
+    width: "100%", 
+    height: CARD_WIDTH * 1.5, 
+    backgroundColor: "#2a2a4a" 
+  },
+  noImage: { 
+    alignItems: "center", 
+    justifyContent: "center",
+    backgroundColor: "#2a2a4a",
+  },
+  noImageText: {
+    color: "#fff",
+    fontSize: 10,
+  },
+  cardTitleWrap: { 
+    padding: 6,
+  },
+  cardTitle: { 
+    fontSize: 11, 
+    fontWeight: "600", 
+    color: "#fff",
+    marginBottom: 2,
+    lineHeight: 14,
+  },
+  ratingText: {
+    fontSize: 10,
+    color: "#ffd700",
+    fontWeight: '600',
+  },
 
+  paginationSpacer: {
+    height: 20,
+  },
+
+  paginationContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
   pagination: {
+    backgroundColor: 'rgba(26, 26, 46, 0.95)',
     padding: 12,
+    borderRadius: 20,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    gap: 8 as any,
+    gap: 6,
     flexWrap: "wrap",
+    borderWidth: 1,
+    borderColor: "#2a2a4a",
+    marginHorizontal: 20,
   },
   pageBtn: {
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 6,
     borderWidth: 1,
-    borderColor: "#ddd",
-    marginHorizontal: 4,
+    borderColor: "#2a2a4a",
+    backgroundColor: "#0f0f1a",
+    minWidth: 40,
+    alignItems: 'center',
   },
   pageBtnActive: {
     backgroundColor: "#0a84ff",
     borderColor: "#0a84ff",
   },
-  pageBtnText: { color: "#111" },
-  pageBtnTextActive: { color: "#fff", fontWeight: "700" },
-
-  genreItem: {
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "#eee",
+  pageBtnText: { 
+    color: "#fff", 
+    fontWeight: "600",
+    fontSize: 12,
   },
-  genreSelected: { backgroundColor: "#0a84ff", borderColor: "#0a84ff" },
-  genreText: { color: "#111" },
-  genreTextSelected: { color: "#fff", fontWeight: "700" },
+  pageBtnTextActive: { 
+    color: "#fff", 
+    fontWeight: "700" 
+  },
 
-  // modal
+  emptyState: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  emptyStateText: {
+    color: '#fff',
+    fontSize: 16,
+  },
+
+  // Modal styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.55)",
+    backgroundColor: "rgba(0,0,0,0.8)",
     justifyContent: "center",
     padding: 20,
   },
   modalCard: {
     maxHeight: "90%",
-    backgroundColor: "#fff",
-    borderRadius: 12,
+    backgroundColor: "#1a1a2e",
+    borderRadius: 20,
     overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#2a2a4a",
   },
-  modalPoster: { width: "100%", height: 360, backgroundColor: "#ddd" },
-  modalTitle: { fontSize: 20, fontWeight: "800" },
-  modalSub: { color: "#555", marginTop: 4 },
+  modalPoster: { 
+    width: "100%", 
+    height: 400, 
+    backgroundColor: "#2a2a4a" 
+  },
+  modalContent: {
+    padding: 20,
+  },
+  modalTitle: { 
+    fontSize: 24, 
+    fontWeight: "800", 
+    color: "#fff",
+    marginBottom: 8,
+  },
+  modalDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  modalSub: { 
+    color: "#ccc", 
+    fontSize: 14,
+  },
+  modalOverview: { 
+    color: "#fff", 
+    fontSize: 16,
+    lineHeight: 22,
+  },
   modalFooter: {
-    padding: 12,
+    padding: 20,
     borderTopWidth: 1,
-    borderTopColor: "#eee",
-    alignItems: "flex-end",
+    borderTopColor: "#2a2a4a",
+    alignItems: "center",
   },
   modalCloseBtn: {
     backgroundColor: "#0a84ff",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    width: '100%',
+    alignItems: 'center',
+  },
+  modalCloseText: { 
+    color: "#fff", 
+    fontWeight: "600",
+    fontSize: 16,
   },
 });
